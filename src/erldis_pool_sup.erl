@@ -2,6 +2,7 @@
 
 -export([
   start_link/1,
+  start_link/2,
   stop/0,
   init/1,
   add_pid/2,
@@ -22,7 +23,15 @@
 %% The above ConnList specifies 5 connections to localhost:6379 and 5 connections to
 %% localhost:6380.
 %%
-start_link(ConnList) ->
+start_link(ConnList) -> start_link(ConnList, true).
+
+
+%%
+%% @doc See the above definition for start_link.
+%% This function supports an additional parameter, MonitorSupervisor.
+%% If set to the atom true, a process will be spawned that will restart the supervisor
+%% if it dies after waiting SUPERVISOR_RESTART_FREQUENCY.
+start_link(ConnList, MonitorSupervisor) ->
   % Create an ETS table to hold the list of child PIDs
   catch ets:new(?MODULE, [public, named_table, bag]),
   
@@ -32,9 +41,14 @@ start_link(ConnList) ->
   % Start a supervisor to manage the connections
   {ok, Pid} = supervisor:start_link({local, ?MODULE}, ?MODULE, [ConnList]),
   
-  spawn(fun() ->
-      monitor_sup(ConnList, Pid)
-  end),
+  if
+      MonitorSupervisor == true ->
+          spawn(fun() ->
+              monitor_sup(ConnList, Pid)
+          end);
+      true ->
+          ok
+  end,
   
   {ok, Pid}.
   
@@ -50,9 +64,15 @@ stop() ->
             erlang:demonitor(MonitorRef)
     end.
     
+get_restart_frequency() ->
+    case application:get_env(erldis, pool_sup_restart_frequency) of
+        {ok, Freq} -> Freq;
+        _ -> ?SUPERVISOR_RESTART_FREQUENCY
+    end.
+    
 restart_sup(ConnList) ->
     error_logger:error_msg("restarting erldis_pool_sup supervisor in ~p ms~n", [?SUPERVISOR_RESTART_FREQUENCY]),
-    timer:sleep(?SUPERVISOR_RESTART_FREQUENCY),
+    timer:sleep(get_restart_frequency()),
     process_flag(trap_exit, true),
     case catch start_link(ConnList) of
         {ok, Pid} ->
