@@ -206,8 +206,9 @@ ensure_started(#redis{socket=undefined, db=DB}=State) ->
 			Report = [{?MODULE, unable_to_connect}, {error, Why}, State],
 			error_logger:warning_report(Report),
 			
-			error_logger:info_msg("Attempting to reconnect to redis in ~p ms~n", [?DEFAULT_RETRY_INTERVAL]),
-			timer:sleep(?DEFAULT_RETRY_INTERVAL),
+			{ok, SleepTime} = app_get_env(erldis, client_retry_interval, ?DEFAULT_RETRY_INTERVAL),
+			error_logger:info_msg("Attempting to reconnect to redis in ~p ms~n", [SleepTime]),
+			timer:sleep(SleepTime),
 			ensure_started(State);
 		{ok, NewState} ->
 			Socket = NewState#redis.socket,
